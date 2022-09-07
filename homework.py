@@ -1,17 +1,17 @@
 import logging
 import os
 import time
+from logging import StreamHandler
+from logging.handlers import RotatingFileHandler
 
 import requests
 import telegram
 from dotenv import load_dotenv
-from logging.handlers import RotatingFileHandler
-
 
 load_dotenv()
 
 
-"""Настройка логирования."""
+"""Set logger."""
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 handler = RotatingFileHandler(
@@ -19,16 +19,21 @@ handler = RotatingFileHandler(
     maxBytes=50000000,
     backupCount=5
 )
+handler2 = StreamHandler()
 logger.addHandler(handler)
+logger.addHandler(handler2)
 formatter = logging.Formatter(
     '%(asctime)s [%(levelname)s] %(message)s ((%(funcName)s))'
 )
 handler.setFormatter(formatter)
 
 
+"""Get environment varibles."""
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
-RETRY_TIME = 20
+RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
@@ -43,63 +48,82 @@ HOMEWORK_STATUSES = {
 def send_message(bot: telegram.Bot, message: str):
     """Бот отправляет сообщение о статусе."""
     if message:
-        bot.send_message(os.getenv('TELEGRAM_CHAT_ID'), message)
+        try:
+            bot.send_message(TELEGRAM_CHAT_ID, message)
+            logger.info('Message was sent')
+        except Exception as error:
+            logger.error(f'Message sending failed. Error: {error}')
 
 
 def get_api_answer(current_timestamp):
     """Получаем полный список домашек."""
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
-    response = requests.get(ENDPOINT, params=params, headers=HEADERS)
+    try:
+        response = requests.get(ENDPOINT, params=params, headers=HEADERS)
+    except Exception as error:
+        logger.error(f'Endpoint connection failed. Error: {error}')
+    if response.status_code != 200:
+        raise Exception
     return response.json()
 
 
 def check_response(response):
     """Получаем список домашек."""
-    try:
-        return response['homeworks']
-    except Exception as error:
-        logger.exception(error)
+    if not isinstance(response, dict):
+        logger.error('Homeworks are not dict.')
+        raise TypeError
+
+    if not len(response):
+        logger.error('Homeworks object is empty')
+        raise Exception
+
+    homeworks = response.get('homeworks')
+
+    if not isinstance(homeworks, list):
+        raise Exception
+
+    if not homeworks:
+        logger.error("KeyError. No 'homeworks' key")
+        raise Exception
+
+    return homeworks
 
 
-def parse_status(homeworks):
+def parse_status(homework):
     """Генерируем строку для отправки."""
-    try:
-        homework = homeworks[0]
-    except IndexError:
-        return None
-
     homework_name = homework['homework_name']
     homework_status = homework['status']
-
     verdict = HOMEWORK_STATUSES[homework_status]
-
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens():
     """Проверка на наличие всех переменных окружения."""
-    varibles = ('PRACTICUM_TOKEN', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID')
-    return varibles
-    # Finish it
+    if not (PRACTICUM_TOKEN and TELEGRAM_CHAT_ID and TELEGRAM_TOKEN):
+        logger.critical('ENVIRONMENT VARIBLES ARE MISSING')
+        return False
+    return True
 
 
 def main():
     """Основная логика работы бота."""
     check_tokens()
 
-    bot = telegram.Bot(token=os.getenv('TELEGRAM_TOKEN'))
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
     previous_status = ''
 
     while True:
         try:
             answer = get_api_answer(current_timestamp)
-            answer = get_api_answer(1)
             homeworks = check_response(answer)
-            message = parse_status(homeworks)
+            homework = homeworks[0]
+            message = parse_status(homework)
             if message != previous_status:
                 send_message(bot, message)
+            else:
+                logger.debug('Message is not unique')
 
             current_timestamp = time.time()
 
