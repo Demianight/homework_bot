@@ -124,7 +124,7 @@ def main():
             if homeworks:
                 homework = homeworks[0]
             else:
-                message = homework
+                message = homeworks
             message = parse_status(homework)
             if message != previous_status:
                 send_message(bot, message)
