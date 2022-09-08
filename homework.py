@@ -7,6 +7,8 @@ from logging.handlers import RotatingFileHandler
 import requests
 import telegram
 from dotenv import load_dotenv
+from http import HTTPStatus as HTTP
+
 
 load_dotenv()
 
@@ -47,12 +49,12 @@ HOMEWORK_STATUSES = {
 
 def send_message(bot: telegram.Bot, message: str):
     """Бот отправляет сообщение о статусе."""
-    if message:
-        try:
-            bot.send_message(TELEGRAM_CHAT_ID, message)
-            logger.info('Message was sent')
-        except Exception as error:
-            logger.error(f'Message sending failed. Error: {error}')
+    try:
+        logger.info('Sending message')
+        bot.send_message(TELEGRAM_CHAT_ID, message)
+        logger.info('Message was sent')
+    except Exception as error:
+        raise Exception(f'Failed to send the message. Error: {error}')
 
 
 def get_api_answer(current_timestamp):
@@ -60,55 +62,56 @@ def get_api_answer(current_timestamp):
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
     try:
+        logger.info('Connecting API')
         response = requests.get(ENDPOINT, params=params, headers=HEADERS)
     except Exception as error:
-        logger.error(f'Endpoint connection failed. Error: {error}')
-    if response.status_code != 200:
-        raise Exception
+        raise Exception(f'Failed to connect to API. Error: {error}')
+
+    if response.status_code != HTTP.OK:
+        raise Exception('Api answer is not 200.')
+
     return response.json()
 
 
 def check_response(response):
     """Получаем список домашек."""
     if not isinstance(response, dict):
-        logger.error('Homeworks are not dict.')
-        raise TypeError
-
-    if not len(response):
-        logger.error('Homeworks object is empty')
-        raise Exception
+        raise TypeError('Homeworks are not dict.')
 
     homeworks = response.get('homeworks')
 
-    if not isinstance(homeworks, list):
-        raise Exception
+    if 'homeworks' not in response and 'current_date' not in response:
+        raise KeyError('Response dont have required keys.')
 
-    if not homeworks:
-        logger.error("KeyError. No 'homeworks' key")
-        raise Exception
+    if 'homeworks' not in response:
+        raise KeyError("'homeworks' key is missing.")
+
+    if not isinstance(homeworks, list):
+        raise TypeError('homeworks object is not a list.')
 
     return homeworks
 
 
 def parse_status(homework):
     """Генерируем строку для отправки."""
-    homework_name = homework['homework_name']
-    homework_status = homework['status']
+    homework_name = homework.get('homework_name')
+    homework_status = homework.get('status')
+    if homework_status not in HOMEWORK_STATUSES:
+        logger.error(f'Status {homework_status} is not valid')
+        raise KeyError
     verdict = HOMEWORK_STATUSES[homework_status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens():
     """Проверка на наличие всех переменных окружения."""
-    if not (PRACTICUM_TOKEN and TELEGRAM_CHAT_ID and TELEGRAM_TOKEN):
-        logger.critical('ENVIRONMENT VARIBLES ARE MISSING')
-        return False
-    return True
+    return all((PRACTICUM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_TOKEN))
 
 
 def main():
     """Основная логика работы бота."""
-    check_tokens()
+    if not check_tokens():
+        exit()
 
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
@@ -118,7 +121,8 @@ def main():
         try:
             answer = get_api_answer(current_timestamp)
             homeworks = check_response(answer)
-            homework = homeworks[0]
+            if homeworks:
+                homework = homeworks[0]
             message = parse_status(homework)
             if message != previous_status:
                 send_message(bot, message)
