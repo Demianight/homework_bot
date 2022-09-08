@@ -98,7 +98,7 @@ def parse_status(homework):
     homework_status = homework.get('status')
     if homework_status not in HOMEWORK_STATUSES:
         logger.error(f'Status {homework_status} is not valid')
-        raise KeyError
+        raise KeyError('Unknown key.')
     verdict = HOMEWORK_STATUSES[homework_status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
