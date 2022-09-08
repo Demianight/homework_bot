@@ -8,6 +8,7 @@ import requests
 import telegram
 from dotenv import load_dotenv
 from http import HTTPStatus as HTTP
+import sys
 
 
 load_dotenv()
@@ -83,9 +84,6 @@ def check_response(response):
     if 'homeworks' not in response and 'current_date' not in response:
         raise KeyError('Response dont have required keys.')
 
-    if 'homeworks' not in response:
-        raise KeyError("'homeworks' key is missing.")
-
     if not isinstance(homeworks, list):
         raise TypeError('homeworks object is not a list.')
 
@@ -94,11 +92,15 @@ def check_response(response):
 
 def parse_status(homework):
     """Генерируем строку для отправки."""
+    if 'homework_name' not in homework:
+        raise KeyError("Homework dict doesn't contain 'homework_name' key")
+
     homework_name = homework.get('homework_name')
     homework_status = homework.get('status')
+
     if homework_status not in HOMEWORK_STATUSES:
-        logger.error(f'Status {homework_status} is not valid')
-        raise KeyError('Unknown key.')
+        raise KeyError('Unknown status.')
+
     verdict = HOMEWORK_STATUSES[homework_status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -111,7 +113,7 @@ def check_tokens():
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
-        exit()
+        sys.exit('Token validation failed.')
 
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
