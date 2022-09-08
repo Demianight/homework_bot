@@ -121,11 +121,10 @@ def main():
         try:
             answer = get_api_answer(current_timestamp)
             homeworks = check_response(answer)
+            message = ''
             if homeworks:
                 homework = homeworks[0]
-            else:
-                message = homeworks
-            message = parse_status(homework)
+                message = parse_status(homework)
             if message != previous_status:
                 send_message(bot, message)
             else:
