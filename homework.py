@@ -123,6 +123,8 @@ def main():
             homeworks = check_response(answer)
             if homeworks:
                 homework = homeworks[0]
+            else:
+                message = homework
             message = parse_status(homework)
             if message != previous_status:
                 send_message(bot, message)
